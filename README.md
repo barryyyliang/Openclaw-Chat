@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./docs/OpenclawChat.png" alt="OpenClaw Chat" width="600">
+</p>
+
 # OpenClaw Chat Client
 
 一个基于 Go + Wails 实现的 OpenClaw Gateway 桌面聊天客户端，支持 macOS / Windows / Linux 三平台。通过 OpenClaw WebSocket 协议直接与 AI 通信，体积小巧（~9MB），使用系统原生 WebView 渲染。
