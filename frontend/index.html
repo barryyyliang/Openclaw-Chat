@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw Chat</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-color: #ebebeb;
+  --chat-bg: #f5f5f5;
+  --sidebar-bg: #2e2e2e;
+  --sidebar-text: #fff;
+  --msg-user-bg: #95ec69;
+  --msg-ai-bg: #ffffff;
+  --input-bg: #ffffff;
+  --border-color: #ddd;
+  --text-color: #333;
+  --text-secondary: #999;
+  --header-bg: #ededed;
+  --hover-bg: #d9d9d9;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  color: var(--text-color);
+  background: var(--bg-color);
+  overflow: hidden;
+  /* Wails 窗口拖拽区域 */
+  user-select: none;
+}
+
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+}
+
+/* ─── 左侧配置面板 ─── */
+.sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  color: var(--sidebar-text);
+  /* 允许窗口拖拽 */
+  --wails-draggable: drag;
+}
+
+.sidebar-logo {
+  text-align: center;
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 16px;
+  padding: 8px 0;
+}
+
+.sidebar h3 {
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  margin-top: 12px;
+}
+
+.sidebar input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 8px;
+  transition: border-color 0.2s;
+  --wails-draggable: no-drag;
+}
+
+.sidebar input:focus {
+  border-color: #07c160;
+}
+
+.sidebar input::placeholder {
+  color: rgba(255,255,255,0.4);
+}
+
+.btn-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  --wails-draggable: no-drag;
+}
+
+.btn-connect {
+  background: #07c160;
+  color: white;
+}
+
+.btn-connect:hover {
+  background: #06ae56;
+}
+
+.btn-connect:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
+
+.btn-disconnect {
+  background: #e74c3c;
+  color: white;
+}
+
+.btn-disconnect:hover {
+  background: #c0392b;
+}
+
+.status-bar {
+  margin-top: 12px;
+  padding: 8px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.05);
+  font-size: 12px;
+  color: rgba(255,255,255,0.7);
+  text-align: center;
+  word-break: break-all;
+}
+
+.device-info {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  word-break: break-all;
+}
+
+.btn-clear {
+  width: 100%;
+  padding: 6px;
+  margin-top: 8px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.7);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  --wails-draggable: no-drag;
+}
+
+.btn-clear:hover {
+  background: rgba(255,255,255,0.15);
+}
+
+/* ─── 历史记录 ─── */
+.history-section {
+  margin-top: 16px;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-section h3 {
+  flex-shrink: 0;
+}
+
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.06);
+  cursor: pointer;
+  transition: background 0.2s;
+  --wails-draggable: no-drag;
+}
+
+.history-item:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+.history-item-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.history-item-host {
+  font-size: 13px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item-meta {
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 2px;
+}
+
+.history-item-delete {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.3);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+  --wails-draggable: no-drag;
+}
+
+.history-item-delete:hover {
+  background: rgba(231, 76, 60, 0.3);
+  color: #e74c3c;
+}
+
+.history-empty {
+  font-size: 12px;
+  color: rgba(255,255,255,0.3);
+  text-align: center;
+  padding: 12px 0;
+}
+
+.history-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.history-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+}
+
+/* ─── 右侧聊天区域 ─── */
+.chat-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--chat-bg);
+  overflow: hidden;
+}
+
+.chat-header {
+  height: 48px;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  font-size: 15px;
+  font-weight: 500;
+  /* 允许窗口拖拽 */
+  --wails-draggable: drag;
+}
+
+.chat-header .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ccc;
+  margin-left: 8px;
+  transition: background 0.3s;
+}
+
+.chat-header .status-dot.online {
+  background: #07c160;
+}
+
+/* ─── 消息区域 ─── */
+.messages-container {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 80%;
+  min-width: 0;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.message-row.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message-row.assistant {
+  align-self: flex-start;
+}
+
+.message-row.system {
+  align-self: center;
+  max-width: 90%;
+}
+
+.message-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.message-avatar.user-avatar {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.message-avatar.ai-avatar {
+  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+
+.message-bubble {
+  padding: 10px 14px;
+  border-radius: 4px;
+  line-height: 1.6;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  position: relative;
+  font-size: 14px;
+  user-select: text;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.message-row.user .message-bubble {
+  background: var(--msg-user-bg);
+  border-radius: 4px 0 4px 4px;
+}
+
+.message-row.assistant .message-bubble {
+  background: var(--msg-ai-bg);
+  border-radius: 0 4px 4px 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.message-row.system .message-bubble {
+  background: rgba(0,0,0,0.05);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+/* 打字指示器 */
+.typing-indicator {
+  display: none;
+  align-self: flex-start;
+  padding: 10px 14px;
+  background: var(--msg-ai-bg);
+  border-radius: 0 4px 4px 4px;
+  margin-left: 46px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.typing-indicator.active {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #999;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+/* ─── 输入区域 ─── */
+.input-area {
+  background: var(--header-bg);
+  border-top: 1px solid var(--border-color);
+  padding: 12px 20px;
+}
+
+.input-wrapper {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.input-wrapper textarea {
+  flex: 1;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  min-height: 36px;
+  max-height: 120px;
+  line-height: 1.5;
+  background: var(--input-bg);
+  transition: border-color 0.2s;
+  user-select: text;
+}
+
+.input-wrapper textarea:focus {
+  border-color: #07c160;
+}
+
+.send-btn {
+  padding: 8px 20px;
+  background: #07c160;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+  height: 36px;
+}
+
+.send-btn:hover {
+  background: #06ae56;
+}
+
+.send-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+/* 滚动条 */
+.messages-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.messages-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.15);
+  border-radius: 3px;
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0,0,0,0.25);
+}
+
+/* Markdown 样式 */
+.message-bubble code {
+  background: rgba(0,0,0,0.06);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+  font-size: 13px;
+}
+
+.message-bubble pre {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.message-bubble pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+/* ─── 弹窗 Modal ─── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.active {
+  display: flex;
+}
+.modal-box {
+  background: #2c2c2e;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  color: #f0f0f0;
+}
+.modal-box h3 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #ff6b6b;
+}
+.modal-box p {
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255,255,255,0.8);
+}
+.modal-box code {
+  display: block;
+  background: #1a1a1c;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+  color: #a8d8a8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: all;
+}
+.modal-box .modal-footer {
+  margin-top: 16px;
+  text-align: right;
+}
+.modal-box .modal-btn {
+  background: #0a84ff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.modal-box .modal-btn:hover {
+  background: #3399ff;
+}
+</style>
+</head>
+<body>
+<div class="app-container">
+  <!-- 左侧配置面板 -->
+  <div class="sidebar">
+    <div class="sidebar-logo">🦞 OpenClaw Chat</div>
+    
+    <h3>服务器地址</h3>
+    <input type="text" id="hostInput" placeholder="IP 或域名">
+    
+    <h3>端口</h3>
+    <input type="text" id="portInput" placeholder="默认 5000">
+    
+    <h3>认证 Token</h3>
+    <input type="password" id="tokenInput" placeholder="Token (可选)">
+    
+    <h3>会话 ID</h3>
+    <input type="text" id="sessionInput" placeholder="留空则由服务器分配">
+    
+    <div class="btn-group">
+      <button class="btn btn-connect" id="connectBtn" onclick="doConnect()">连接</button>
+      <button class="btn btn-disconnect" onclick="doDisconnect()">断开</button>
+    </div>
+    
+    <div class="status-bar" id="statusBar">❌ 未连接</div>
+    
+    <!-- 连接历史 -->
+    <div class="history-section">
+      <h3>连接历史</h3>
+      <div class="history-list" id="historyList">
+        <div class="history-empty">暂无历史记录</div>
+      </div>
+    </div>
+    
+    <div class="device-info" id="deviceInfo"></div>
+    
+    <button class="btn-clear" onclick="clearChat()">🗑️ 清空聊天</button>
+  </div>
+
+  <!-- 右侧聊天区域 -->
+  <div class="chat-main">
+    <div class="chat-header">
+      <span>OpenClaw Agent</span>
+      <div class="status-dot" id="statusDot"></div>
+    </div>
+
+    <div class="messages-container" id="messagesContainer">
+    </div>
+
+    <div class="typing-indicator" id="typingIndicator">
+      <span></span><span></span><span></span>
+    </div>
+
+    <div class="input-area">
+      <div class="input-wrapper">
+        <textarea id="messageInput" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" rows="1"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">发送</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── 全局状态 ───
+var currentAssistantBubble = null;
+var isStreaming = false;
+
+// ─── 初始化 ───
+async function init() {
+  try {
+    const config = await window.go.main.WailsApp.GetConfig();
+    if (config.host && config.host !== 'localhost') {
+      document.getElementById('hostInput').value = config.host;
+    }
+    if (config.port && config.port !== '5000') {
+      document.getElementById('portInput').value = config.port;
+    }
+    if (config.token) {
+      document.getElementById('tokenInput').value = config.token;
+    }
+    if (config.sessionId) {
+      document.getElementById('sessionInput').value = config.sessionId;
+    }
+    if (config.deviceId) {
+      document.getElementById('deviceInfo').textContent = '设备: ' + config.deviceId.substring(0, 16) + '...';
+    }
+  } catch (e) {
+    console.error('Init failed:', e);
+  }
+  
+  // 加载连接历史
+  await loadHistory();
+}
+
+// ─── 历史记录管理 ───
+async function loadHistory() {
+  try {
+    const records = await window.go.main.WailsApp.GetHistory();
+    renderHistory(records);
+  } catch (e) {
+    console.error('Load history failed:', e);
+  }
+}
+
+function renderHistory(records) {
+  const container = document.getElementById('historyList');
+  
+  if (!records || records.length === 0) {
+    container.innerHTML = '<div class="history-empty">暂无历史记录</div>';
+    return;
+  }
+  
+  container.innerHTML = '';
+  records.forEach(function(record) {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    
+    // 格式化时间
+    var timeStr = '';
+    if (record.lastUsed) {
+      var d = new Date(record.lastUsed);
+      timeStr = d.toLocaleDateString('zh-CN', {month:'short', day:'numeric'}) + ' ' +
+                d.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+    }
+    
+    var tokenHint = record.token ? ' 🔑' : '';
+    var portDisplay = record.port && record.port !== '5000' ? ':' + record.port : ':' + record.port;
+    
+    item.innerHTML = 
+      '<div class="history-item-info">' +
+        '<div class="history-item-host">' + escapeHtml(record.host) + portDisplay + tokenHint + '</div>' +
+        '<div class="history-item-meta">使用 ' + record.usedCount + ' 次 · ' + timeStr + '</div>' +
+      '</div>' +
+      '<button class="history-item-delete" title="删除">✕</button>';
+    
+    // 点击填充连接信息
+    item.querySelector('.history-item-info').addEventListener('click', function() {
+      document.getElementById('hostInput').value = record.host;
+      document.getElementById('portInput').value = record.port;
+      document.getElementById('tokenInput').value = record.token || '';
+      document.getElementById('sessionInput').value = record.sessionId || '';
+      setStatus('⏎ 已填充 ' + record.host + portDisplay + '，点击连接');
+    });
+    
+    // 删除按钮
+    item.querySelector('.history-item-delete').addEventListener('click', function(e) {
+      e.stopPropagation();
+      deleteHistoryItem(record.host, record.port);
+    });
+    
+    container.appendChild(item);
+  });
+}
+
+async function deleteHistoryItem(host, port) {
+  try {
+    await window.go.main.WailsApp.DeleteHistory(host, port);
+    await loadHistory();
+  } catch (e) {
+    console.error('Delete history failed:', e);
+  }
+}
+
+// ─── 连接 ───
+async function doConnect() {
+  const host = document.getElementById('hostInput').value.trim();
+  const port = document.getElementById('portInput').value.trim();
+  const token = document.getElementById('tokenInput').value.trim();
+  const sessionId = document.getElementById('sessionInput').value.trim();
+  
+  document.getElementById('connectBtn').disabled = true;
+  
+  try {
+    const err = await window.go.main.WailsApp.Connect(host, port, token, sessionId);
+    if (err) {
+      setStatus('❌ ' + err);
+    }
+  } catch (e) {
+    setStatus('❌ 连接异常: ' + e);
+  }
+  
+  document.getElementById('connectBtn').disabled = false;
+}
+
+// ─── 断开 ───
+async function doDisconnect() {
+  try {
+    await window.go.main.WailsApp.Disconnect();
+  } catch (e) {
+    console.error('Disconnect error:', e);
+  }
+}
+
+// ─── 发送消息 ───
+async function sendMessage() {
+  const input = document.getElementById('messageInput');
+  const text = input.value.trim();
+  if (!text) return;
+  
+  addUserMessage(text);
+  input.value = '';
+  autoResize(input);
+  
+  showTyping();
+  
+  try {
+    const err = await window.go.main.WailsApp.SendMessage(text);
+    if (err) {
+      hideTyping();
+      addSystemMessage('❌ ' + err);
+    }
+  } catch (e) {
+    hideTyping();
+    addSystemMessage('❌ 发送异常: ' + e);
+  }
+}
+
+// ─── 事件监听（从 Go 后端接收） ───
+window.runtime.EventsOn('status', function(data) {
+  if (data && data.text) {
+    setStatus(data.text);
+  }
+});
+
+window.runtime.EventsOn('connected', function(data) {
+  document.getElementById('statusDot').classList.add('online');
+  setStatus('✅ 已连接 — 就绪');
+  // 显示服务器返回/使用的 sessionId
+  if (data && data.sessionId) {
+    document.getElementById('sessionInput').value = data.sessionId;
+    // 加载该会话的历史聊天记录
+    loadChatHistory(data.sessionId);
+  }
+  // 刷新历史列表
+  loadHistory();
+});
+
+window.runtime.EventsOn('disconnected', function() {
+  document.getElementById('statusDot').classList.remove('online');
+  setStatus('❌ 连接已断开');
+});
+
+window.runtime.EventsOn('connect_failed', function(data) {
+  document.getElementById('connectBtn').disabled = false;
+  // 检测是否为设备未配对错误
+  if (data && data.error && (data.error.indexOf('pairing') !== -1 || data.error.indexOf('not-paired') !== -1)) {
+    showPairingModal();
+  }
+});
+
+window.runtime.EventsOn('stream_start', function() {
+  hideTyping();
+  isStreaming = true;
+  currentAssistantBubble = addAssistantMessage('');
+});
+
+window.runtime.EventsOn('stream_delta', function(data) {
+  if (!isStreaming) {
+    isStreaming = true;
+    hideTyping();
+    currentAssistantBubble = addAssistantMessage('');
+  }
+  if (currentAssistantBubble && data && data.delta) {
+    appendToMessage(currentAssistantBubble, data.delta);
+  }
+});
+
+window.runtime.EventsOn('stream_end', function() {
+  if (currentAssistantBubble) {
+    finalizeMessage(currentAssistantBubble);
+  }
+  isStreaming = false;
+  currentAssistantBubble = null;
+  hideTyping();
+});
+
+window.runtime.EventsOn('error', function(data) {
+  if (data) {
+    addSystemMessage('⚠️ [' + (data.code || 'ERROR') + '] ' + (data.message || '未知错误'));
+  }
+});
+
+window.runtime.EventsOn('tool_approval', function(data) {
+  if (data) {
+    addSystemMessage('🔧 工具: ' + data.toolName + ' (已自动批准)');
+  }
+});
+
+// ─── UI 操作函数 ───
+function setStatus(text) {
+  document.getElementById('statusBar').textContent = text;
+}
+
+function showPairingModal() {
+  document.getElementById('pairingModal').classList.add('active');
+}
+
+function closePairingModal() {
+  document.getElementById('pairingModal').classList.remove('active');
+}
+
+async function loadChatHistory(sessionId) {
+  try {
+    const messages = await window.go.main.WailsApp.GetChatHistory(sessionId);
+    if (messages && messages.length > 0) {
+      // 清空当前消息区域，重新渲染历史
+      document.getElementById('messagesContainer').innerHTML = '';
+      messages.forEach(function(msg) {
+        if (msg.role === 'user') {
+          addUserMessage(msg.content);
+        } else if (msg.role === 'assistant') {
+          var bubble = addAssistantMessage(msg.content);
+          finalizeMessage(bubble);
+        } else if (msg.role === 'system') {
+          addSystemMessage(msg.content);
+        }
+      });
+    }
+  } catch (e) {
+    console.error('loadChatHistory error:', e);
+  }
+}
+
+function addUserMessage(text) {
+  const container = document.getElementById('messagesContainer');
+  const row = document.createElement('div');
+  row.className = 'message-row user';
+  row.innerHTML = '<div class="message-avatar user-avatar">🧑</div>' +
+    '<div class="message-bubble">' + escapeHtml(text) + '</div>';
+  container.appendChild(row);
+  scrollToBottom();
+}
+
+function addAssistantMessage(text) {
+  const container = document.getElementById('messagesContainer');
+  const row = document.createElement('div');
+  row.className = 'message-row assistant';
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble';
+  bubble.textContent = text;
+  row.innerHTML = '<div class="message-avatar ai-avatar">🦞</div>';
+  row.appendChild(bubble);
+  container.appendChild(row);
+  scrollToBottom();
+  return bubble;
+}
+
+function addSystemMessage(text) {
+  const container = document.getElementById('messagesContainer');
+  const row = document.createElement('div');
+  row.className = 'message-row system';
+  row.innerHTML = '<div class="message-bubble">' + escapeHtml(text) + '</div>';
+  container.appendChild(row);
+  scrollToBottom();
+}
+
+function appendToMessage(bubble, delta) {
+  bubble.textContent += delta;
+  scrollToBottom();
+}
+
+function finalizeMessage(bubble) {
+  const text = bubble.textContent;
+  let html = escapeHtml(text);
+  // 代码块
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+  // 行内代码
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // 加粗
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // 换行
+  html = html.replace(/\n/g, '<br>');
+  bubble.innerHTML = html;
+}
+
+function showTyping() {
+  document.getElementById('typingIndicator').classList.add('active');
+}
+
+function hideTyping() {
+  document.getElementById('typingIndicator').classList.remove('active');
+}
+
+function clearChat() {
+  document.getElementById('messagesContainer').innerHTML = '';
+  // 清空后端持久化的聊天历史
+  try {
+    window.go.main.WailsApp.ClearChatHistory();
+  } catch (e) {
+    console.error('ClearChatHistory error:', e);
+  }
+}
+
+function scrollToBottom() {
+  const container = document.getElementById('messagesContainer');
+  requestAnimationFrame(function() {
+    container.scrollTop = container.scrollHeight;
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function autoResize(textarea) {
+  textarea.style.height = 'auto';
+  textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+}
+
+// ─── 键盘事件 ───
+document.getElementById('messageInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+document.getElementById('messageInput').addEventListener('input', function() {
+  autoResize(this);
+});
+
+// ─── 启动 ───
+document.addEventListener('DOMContentLoaded', init);
+</script>
+
+<!-- 设备配对提示弹窗 -->
+<div class="modal-overlay" id="pairingModal">
+  <div class="modal-box">
+    <h3>⚠️ 设备未配对</h3>
+    <p>当前设备尚未在 OpenClaw Gateway 上完成配对审批，无法建立连接。</p>
+    <p>请 SSH 登录到 Gateway 服务器，执行以下命令完成配对：</p>
+    <p><strong>1. 查看待审批设备：</strong></p>
+    <code>openclaw devices list --json</code>
+    <p><strong>2. 审批设备（使用上一步 pending 中的 requestId）：</strong></p>
+    <code>openclaw devices approve &lt;requestId&gt;</code>
+    <p style="margin-top:12px; color:rgba(255,255,255,0.5); font-size:12px;">💡 或者将已配对电脑的 ~/.openclaw-chat-client/device.json 拷贝到本机相同路径。</p>
+    <div class="modal-footer">
+      <button class="modal-btn" onclick="closePairingModal()">知道了</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
