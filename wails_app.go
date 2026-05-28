@@ -56,16 +56,16 @@ func (a *WailsApp) shutdown(ctx context.Context) {
 func (a *WailsApp) GetConfig() map[string]string {
 	host, port := a.parseHostPort()
 	return map[string]string{
-		"host":      host,
-		"port":      port,
-		"token":     a.config.Token,
-		"sessionId": a.config.SessionID,
-		"deviceId":  a.config.DeviceID,
+		"host":       host,
+		"port":       port,
+		"token":      a.config.Token,
+		"sessionKey": a.config.SessionKey,
+		"deviceId":   a.config.DeviceID,
 	}
 }
 
 // Connect 连接到服务器
-func (a *WailsApp) Connect(host, port, token, sessionId string) string {
+func (a *WailsApp) Connect(host, port, token, sessionKey string) string {
 	// 关闭旧连接
 	if a.wsClient != nil {
 		a.wsClient.Close()
@@ -83,7 +83,7 @@ func (a *WailsApp) Connect(host, port, token, sessionId string) string {
 	scheme := "ws"
 	a.config.URL = fmt.Sprintf("%s://%s:%s/ws", scheme, host, port)
 	a.config.Token = token
-	a.config.SessionID = sessionId
+	a.config.SessionKey = sessionKey
 	a.config.EnsureDeviceIdentity()
 
 	// 连接（保存历史在连接成功后进行）
@@ -177,6 +177,20 @@ func (a *WailsApp) connectBackend() {
 		a.streamBuf.Reset()
 		a.streamingMu.Unlock()
 
+		// 检测并丢弃记忆插件的内部输出（scene_name/memories/阶段分析等）
+		// 这些内容可能因 phase 标记缺失而泄漏到 assistant stream
+		if isMemoryPluginOutput(fullText) {
+			if a.config.Debug {
+				preview := fullText
+				if len(preview) > 100 {
+					preview = preview[:100] + "..."
+				}
+				fmt.Printf("  [DEBUG] stream_end: 检测到记忆插件输出，已丢弃: %s\n", preview)
+			}
+			a.emitEvent("stream_end", nil)
+			return
+		}
+
 		// 保存 assistant 回复到聊天历史
 		if a.chatHistory != nil && fullText != "" {
 			a.chatHistory.Add("assistant", fullText)
@@ -224,24 +238,25 @@ func (a *WailsApp) connectBackend() {
 		return
 	}
 
-	// 连接成功，获取服务器返回的 sessionId
-	serverSessionID := a.wsClient.sessionID
-	// 如果用户指定了 sessionId，则使用用户指定的；否则使用服务器返回的
-	if a.config.SessionID != "" {
-		a.wsClient.sessionID = a.config.SessionID
+	// 连接成功
+	// sessionKey 用于事件过滤和消息发送，格式为 "agent:<agentId>:<sessionName>"
+	// 用户可以只输入 sessionName（如 "woowoo"），会自动补全为 "agent:main:woowoo"
+	if a.config.SessionKey != "" {
+		a.wsClient.sessionKey = normalizeSessionKey(a.config.SessionKey)
 	} else {
-		a.config.SessionID = serverSessionID
+		a.wsClient.sessionKey = "agent:main:main"
 	}
+	a.config.SessionKey = a.wsClient.sessionKey
 
-	// 保存到连接历史（包含 sessionId）
+	// 保存到连接历史（包含 sessionKey）
 	host, port := a.parseHostPort()
-	a.history.AddOrUpdate(host, port, a.config.Token, a.wsClient.sessionID)
+	a.history.AddOrUpdate(host, port, a.config.Token, a.wsClient.sessionKey)
 
 	// 初始化当前会话的聊天历史
-	a.chatHistory = NewChatHistory(a.wsClient.sessionID)
+	a.chatHistory = NewChatHistory(a.wsClient.sessionKey)
 
 	a.emitEvent("status", map[string]string{"text": "已连接 — 就绪"})
-	a.emitEvent("connected", map[string]string{"sessionId": a.wsClient.sessionID})
+	a.emitEvent("connected", map[string]string{"sessionKey": a.wsClient.sessionKey})
 }
 
 // emitEvent 向前端发送事件
@@ -258,6 +273,58 @@ func (a *WailsApp) hasConnectionParams() bool {
 		return false
 	}
 	return true
+}
+
+// isMemoryPluginOutput 检测文本是否为 OpenClaw 记忆插件的内部输出
+// 这些内容包含场景分析（scene_name）、记忆提取（memories）、阶段分析等
+// 它们不应展示在聊天窗口中
+func isMemoryPluginOutput(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	// 检测 JSON 格式的记忆输出（以 [ 开头，包含 scene_name 或 memories）
+	if strings.HasPrefix(trimmed, "[") || strings.HasPrefix(trimmed, "{") {
+		if strings.Contains(trimmed, `"scene_name"`) || strings.Contains(trimmed, `"memories"`) || strings.Contains(trimmed, `"record_id"`) {
+			return true
+		}
+	}
+	// 检测记忆插件的推理过程文本标记
+	if strings.Contains(trimmed, "阶段 0：场景总数检查") ||
+		strings.Contains(trimmed, "阶段 1：分析与分类") ||
+		strings.Contains(trimmed, "阶段 2：策略选择") ||
+		strings.Contains(trimmed, "阶段 3：撰写与合成") {
+		return true
+	}
+	// 检测以 ```json 开头并包含 record_id/action/target_ids 的内容
+	if strings.Contains(trimmed, `"action"`) && strings.Contains(trimmed, `"merged_content"`) && strings.Contains(trimmed, `"merged_type"`) {
+		return true
+	}
+	return false
+}
+
+// normalizeSessionKey 将用户输入的 sessionKey 规范化为 "agent:<agentId>:<sessionName>" 格式
+// 支持的输入：
+//   - "woowoo"              → "agent:main:woowoo"   （只有 sessionName）
+//   - "myagent:woowoo"      → "agent:myagent:woowoo" （agentId:sessionName）
+//   - "agent:main:woowoo"   → "agent:main:woowoo"   （已是完整格式，原样返回）
+func normalizeSessionKey(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "agent:main:main"
+	}
+	parts := strings.Split(input, ":")
+	switch len(parts) {
+	case 1:
+		// 只有 sessionName，补全为 agent:main:<sessionName>
+		return "agent:main:" + parts[0]
+	case 2:
+		// agentId:sessionName，补全为 agent:<agentId>:<sessionName>
+		return "agent:" + parts[0] + ":" + parts[1]
+	default:
+		// 已经是完整格式或更多段，原样返回
+		return input
+	}
 }
 
 // parseHostPort 从 config.URL 解析 host 和 port

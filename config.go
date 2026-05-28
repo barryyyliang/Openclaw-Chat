@@ -15,11 +15,11 @@ import (
 
 // Config 保存连接配置
 type Config struct {
-	URL       string // WebSocket URL, e.g. ws://localhost:5000/ws
-	Token     string // Bearer token 认证
-	Password  string // Password 认证
-	SessionID string // 会话 ID (从 hello-ok 获取后填入)
-	ClientID  string // 客户端唯一标识（必须是 OpenClaw 允许的枚举值）
+	URL        string // WebSocket URL, e.g. ws://localhost:5000/ws
+	Token      string // Bearer token 认证
+	Password   string // Password 认证
+	SessionKey string // 会话 Key (如 "agent:main:main")
+	ClientID   string // 客户端唯一标识（必须是 OpenClaw 允许的枚举值）
 	Debug bool // 调试模式，输出详细日志
 
 	// Ed25519 设备身份

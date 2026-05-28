@@ -44,7 +44,8 @@ type WSClient struct {
 	connected    bool              // 是否完成 hello-ok 握手
 	connectCh    chan error        // 握手完成通知
 	challengeCh  chan *ChallengePayload // 等待 challenge 通知
-	sessionID    string            // 服务器分配的 SessionID
+	connID       string            // 服务器分配的连接 ID（来自 hello-ok 握手）
+	sessionKey   string            // 当前使用的 Session Key（如 "agent:main:main"，用于事件过滤）
 
 	// 请求 ID 计数器
 	reqIDCounter uint64
@@ -171,7 +172,7 @@ func (c *WSClient) Connect() error {
 	}
 
 	if c.debug {
-		fmt.Printf("  [DEBUG] 握手成功! sessionId=%s\n", c.sessionID)
+		fmt.Printf("  [DEBUG] 握手成功! connID=%s, sessionKey=%s\n", c.connID, c.sessionKey)
 	}
 
 	// 启动心跳
@@ -280,7 +281,7 @@ func (c *WSClient) SendMessage(text string) error {
 
 	// RPC 模式: 发送 RequestFrame
 	// sessionKey 格式: "agent:<agentId>:<sessionName>"
-	sessionKey := c.sessionID
+	sessionKey := c.sessionKey
 	if sessionKey == "" {
 		sessionKey = "agent:main:main" // 默认主会话
 	}
@@ -550,7 +551,7 @@ func (c *WSClient) handleConnectResponse(frame *ServerFrame) {
 			}
 			if err := json.Unmarshal(frame.Payload, &payload); err == nil {
 				if payload.Server.ConnID != "" {
-					c.sessionID = payload.Server.ConnID
+					c.connID = payload.Server.ConnID
 				}
 				if c.debug {
 					fmt.Printf("  [DEBUG] hello-ok: protocol=%d, connId=%s\n", payload.Protocol, payload.Server.ConnID)
@@ -558,7 +559,7 @@ func (c *WSClient) handleConnectResponse(frame *ServerFrame) {
 			}
 		}
 		// 也尝试从 Result 字段解析（某些版本可能用 result 代替 payload）
-		if c.sessionID == "" && frame.Result != nil {
+		if c.connID == "" && frame.Result != nil {
 			var result struct {
 				Type      string `json:"type"`
 				SessionID string `json:"sessionId"`
@@ -568,9 +569,9 @@ func (c *WSClient) handleConnectResponse(frame *ServerFrame) {
 			}
 			if err := json.Unmarshal(frame.Result, &result); err == nil {
 				if result.SessionID != "" {
-					c.sessionID = result.SessionID
+					c.connID = result.SessionID
 				} else if result.Server.ConnID != "" {
-					c.sessionID = result.Server.ConnID
+					c.connID = result.Server.ConnID
 				}
 			}
 		}
@@ -595,7 +596,7 @@ func (c *WSClient) handleTypedFrame(frame *ServerFrame) {
 			var payload HelloOKPayload
 			if err := json.Unmarshal(frame.Payload, &payload); err == nil {
 				if payload.SessionID != "" {
-					c.sessionID = payload.SessionID
+					c.connID = payload.SessionID
 				}
 			}
 		}
@@ -652,13 +653,24 @@ func (c *WSClient) handleEventFrame(frame *ServerFrame) {
 			raw = frame.Payload
 		}
 
-		// 解析 agent 事件: { "stream": "assistant"|"thinking"|"lifecycle", "data": { "text": "...", "delta": "..." } }
+		// 解析 agent 事件: { "sessionKey": "...", "stream": "assistant"|"thinking"|"lifecycle", "data": { "text": "...", "delta": "...", "phase": "..." } }
 		var agentEvent struct {
-			Stream string `json:"stream"`
-			Data   struct {
-				Text  string `json:"text"`
-				Delta string `json:"delta"`
-				Phase string `json:"phase"`
+			SessionKey string `json:"sessionKey"`
+			Stream     string `json:"stream"`
+			Data       struct {
+				Text    string `json:"text"`
+				Delta   string `json:"delta"`
+				Phase   string `json:"phase"`
+				// 嵌套的 message/partial/item 中也可能有 phase（与 Gateway resolveAssistantEventPhase 一致）
+				Message *struct {
+					Phase string `json:"phase"`
+				} `json:"message"`
+				Partial *struct {
+					Phase string `json:"phase"`
+				} `json:"partial"`
+				Item *struct {
+					Phase string `json:"phase"`
+				} `json:"item"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(raw, &agentEvent); err != nil {
@@ -668,9 +680,43 @@ func (c *WSClient) handleEventFrame(frame *ServerFrame) {
 			return
 		}
 
+		// sessionKey 过滤：只处理属于当前会话的 agent 事件
+		if c.sessionKey != "" && agentEvent.SessionKey != "" && agentEvent.SessionKey != c.sessionKey {
+			if c.debug {
+				fmt.Printf("  [DEBUG] agent 事件 sessionKey 不匹配，忽略: event=%s, local=%s\n", agentEvent.SessionKey, c.sessionKey)
+			}
+			return
+		}
+
 		switch agentEvent.Stream {
 		case "assistant":
-			// 助手文本流式增量
+			// 检测 "commentary" phase — 与 Gateway 的 resolveAssistantEventPhase 一致
+			// phase 可能在 data.phase / data.message.phase / data.partial.phase / data.item.phase
+			isCommentary := agentEvent.Data.Phase == "commentary"
+			if !isCommentary && agentEvent.Data.Message != nil && agentEvent.Data.Message.Phase == "commentary" {
+				isCommentary = true
+			}
+			if !isCommentary && agentEvent.Data.Partial != nil && agentEvent.Data.Partial.Phase == "commentary" {
+				isCommentary = true
+			}
+			if !isCommentary && agentEvent.Data.Item != nil && agentEvent.Data.Item.Phase == "commentary" {
+				isCommentary = true
+			}
+			if isCommentary {
+				// 这是记忆插件/内部推理输出，不展示在聊天窗口中
+				if c.debug {
+					preview := agentEvent.Data.Delta
+					if preview == "" {
+						preview = agentEvent.Data.Text
+					}
+					if len(preview) > 100 {
+						preview = preview[:100] + "..."
+					}
+					fmt.Printf("  [DEBUG] assistant commentary (已过滤): %s\n", preview)
+				}
+				return
+			}
+			// 助手文本流式增量（正常回复）
 			if agentEvent.Data.Delta != "" && c.onStreamDelta != nil {
 				c.onStreamDelta(agentEvent.Data.Delta)
 			}
@@ -692,8 +738,17 @@ func (c *WSClient) handleEventFrame(frame *ServerFrame) {
 				}
 			}
 		default:
+			// 其他 stream（如 tool, plan, command_output, compaction, patch 等）
+			// 都是内部数据流，不展示在聊天窗口中，仅调试输出
 			if c.debug {
-				fmt.Printf("  [DEBUG] agent 未知 stream: %s\n", agentEvent.Stream)
+				preview := agentEvent.Data.Delta
+				if preview == "" {
+					preview = agentEvent.Data.Text
+				}
+				if len(preview) > 100 {
+					preview = preview[:100] + "..."
+				}
+				fmt.Printf("  [DEBUG] agent stream=%q (已忽略): %s\n", agentEvent.Stream, preview)
 			}
 		}
 
@@ -718,7 +773,8 @@ func (c *WSClient) handleEventFrame(frame *ServerFrame) {
 			HasThinkingDelta bool   `json:"hasThinkingDelta"`
 			// final 状态可能包含完整文本
 			Payloads []struct {
-				Text string `json:"text"`
+				Stream string `json:"stream"` // "assistant"|"thinking" 等
+				Text   string `json:"text"`
 			} `json:"payloads"`
 		}
 		if err := json.Unmarshal(raw, &chatEvent); err != nil {
@@ -728,11 +784,33 @@ func (c *WSClient) handleEventFrame(frame *ServerFrame) {
 			return
 		}
 
+		// sessionKey 过滤：只处理属于当前会话的 chat 事件
+		if c.sessionKey != "" && chatEvent.SessionKey != "" && chatEvent.SessionKey != c.sessionKey {
+			if c.debug {
+				fmt.Printf("  [DEBUG] chat 事件 sessionKey 不匹配，忽略: event=%s, local=%s\n", chatEvent.SessionKey, c.sessionKey)
+			}
+			return
+		}
+
 		switch chatEvent.State {
 		case "final":
 			// 聊天最终状态 — 如果有 payloads 中的完整文本
+			// 只处理 assistant stream 的 payload，跳过 thinking（记忆/场景等内部数据）
 			if len(chatEvent.Payloads) > 0 {
 				for _, p := range chatEvent.Payloads {
+					// 只处理明确标记为 "assistant" stream 的 payload
+					// 跳过所有其他 stream（thinking、空字符串等 — 包含记忆插件、场景数据、内部推理等）
+					if p.Stream != "assistant" {
+						if c.debug {
+							// 截取前 100 字符用于调试
+							preview := p.Text
+							if len(preview) > 100 {
+								preview = preview[:100] + "..."
+							}
+							fmt.Printf("  [DEBUG] chat final: 跳过非 assistant payload (stream=%q): %s\n", p.Stream, preview)
+						}
+						continue
+					}
 					if p.Text != "" && c.onStreamDelta != nil {
 						// 如果之前没收到流式 delta，用 payloads 中的完整文本
 						c.onStreamDelta(p.Text)
@@ -814,6 +892,20 @@ func (c *WSClient) handleEventFrame(frame *ServerFrame) {
 	case EventAssistantMessage:
 		if c.onMessage != nil {
 			c.onMessage(frame)
+		}
+
+	// ─── Session 相关事件（静默处理，包含记忆/场景等内部数据）──────────────────
+	case "session.message", "session.tool", "sessions.changed":
+		// 这些事件包含记忆插件输出（scene_name, memories 等内部数据）
+		// 不展示在聊天窗口中
+		if c.debug {
+			fmt.Printf("  [DEBUG] %s 事件 (已忽略)\n", frame.Event)
+		}
+
+	// ─── Presence / Heartbeat（静默处理）─────────────────────────────────────
+	case "presence", "heartbeat", "cron", "shutdown":
+		if c.debug {
+			fmt.Printf("  [DEBUG] %s 事件 (已忽略)\n", frame.Event)
 		}
 
 	default:

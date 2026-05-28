@@ -20,7 +20,7 @@ export namespace main {
 	    host: string;
 	    port: string;
 	    token: string;
-	    sessionId: string;
+	    sessionKey: string;
 	    label: string;
 	    lastUsed: string;
 	    usedCount: number;
@@ -34,7 +34,7 @@ export namespace main {
 	        this.host = source["host"];
 	        this.port = source["port"];
 	        this.token = source["token"];
-	        this.sessionId = source["sessionId"];
+	        this.sessionKey = source["sessionKey"];
 	        this.label = source["label"];
 	        this.lastUsed = source["lastUsed"];
 	        this.usedCount = source["usedCount"];

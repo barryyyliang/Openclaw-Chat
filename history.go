@@ -9,13 +9,13 @@ import (
 
 // ConnectionRecord 单条连接历史记录
 type ConnectionRecord struct {
-	Host      string `json:"host"`
-	Port      string `json:"port"`
-	Token     string `json:"token"`
-	SessionID string `json:"sessionId"` // 会话 ID，用于恢复到同一会话
-	Label     string `json:"label"`     // 可选的用户自定义标签
-	LastUsed  string `json:"lastUsed"`  // ISO8601 时间戳
-	UsedCount int    `json:"usedCount"` // 使用次数
+	Host       string `json:"host"`
+	Port       string `json:"port"`
+	Token      string `json:"token"`
+	SessionKey string `json:"sessionKey"` // 会话 Key，用于恢复到同一会话
+	Label      string `json:"label"`      // 可选的用户自定义标签
+	LastUsed   string `json:"lastUsed"`   // ISO8601 时间戳
+	UsedCount  int    `json:"usedCount"`  // 使用次数
 }
 
 // ConnectionHistory 连接历史管理
@@ -67,15 +67,15 @@ func (h *ConnectionHistory) save() error {
 }
 
 // AddOrUpdate 添加或更新一条记录（基于 host+port 去重）
-func (h *ConnectionHistory) AddOrUpdate(host, port, token, sessionID string) {
+func (h *ConnectionHistory) AddOrUpdate(host, port, token, sessionKey string) {
 	now := time.Now().Format(time.RFC3339)
 
 	for i, r := range h.Records {
 		if r.Host == host && r.Port == port {
-			// 已存在，更新 token、sessionID 和时间
+			// 已存在，更新 token、sessionKey 和时间
 			h.Records[i].Token = token
-			if sessionID != "" {
-				h.Records[i].SessionID = sessionID
+			if sessionKey != "" {
+				h.Records[i].SessionKey = sessionKey
 			}
 			h.Records[i].LastUsed = now
 			h.Records[i].UsedCount++
@@ -90,12 +90,12 @@ func (h *ConnectionHistory) AddOrUpdate(host, port, token, sessionID string) {
 
 	// 新记录，插入到最前面
 	record := ConnectionRecord{
-		Host:      host,
-		Port:      port,
-		Token:     token,
-		SessionID: sessionID,
-		LastUsed:  now,
-		UsedCount: 1,
+		Host:       host,
+		Port:       port,
+		Token:      token,
+		SessionKey: sessionKey,
+		LastUsed:   now,
+		UsedCount:  1,
 	}
 	h.Records = append([]ConnectionRecord{record}, h.Records...)
 

@@ -615,8 +615,8 @@ html, body {
     <h3>认证 Token</h3>
     <input type="password" id="tokenInput" placeholder="Token (可选)">
     
-    <h3>会话 ID</h3>
-    <input type="text" id="sessionInput" placeholder="留空则由服务器分配">
+    <h3>Session Key</h3>
+    <input type="text" id="sessionInput" placeholder="输入会话名称，如 woowoo，留空则为 main">
     
     <div class="btn-group">
       <button class="btn btn-connect" id="connectBtn" onclick="doConnect()">连接</button>
@@ -679,8 +679,8 @@ async function init() {
     if (config.token) {
       document.getElementById('tokenInput').value = config.token;
     }
-    if (config.sessionId) {
-      document.getElementById('sessionInput').value = config.sessionId;
+    if (config.sessionKey) {
+      document.getElementById('sessionInput').value = config.sessionKey;
     }
     if (config.deviceId) {
       document.getElementById('deviceInfo').textContent = '设备: ' + config.deviceId.substring(0, 16) + '...';
@@ -739,7 +739,7 @@ function renderHistory(records) {
       document.getElementById('hostInput').value = record.host;
       document.getElementById('portInput').value = record.port;
       document.getElementById('tokenInput').value = record.token || '';
-      document.getElementById('sessionInput').value = record.sessionId || '';
+      document.getElementById('sessionInput').value = record.sessionKey || '';
       setStatus('⏎ 已填充 ' + record.host + portDisplay + '，点击连接');
     });
     
@@ -767,12 +767,12 @@ async function doConnect() {
   const host = document.getElementById('hostInput').value.trim();
   const port = document.getElementById('portInput').value.trim();
   const token = document.getElementById('tokenInput').value.trim();
-  const sessionId = document.getElementById('sessionInput').value.trim();
+  const sessionKey = document.getElementById('sessionInput').value.trim();
   
   document.getElementById('connectBtn').disabled = true;
   
   try {
-    const err = await window.go.main.WailsApp.Connect(host, port, token, sessionId);
+    const err = await window.go.main.WailsApp.Connect(host, port, token, sessionKey);
     if (err) {
       setStatus('❌ ' + err);
     }
@@ -826,11 +826,11 @@ window.runtime.EventsOn('status', function(data) {
 window.runtime.EventsOn('connected', function(data) {
   document.getElementById('statusDot').classList.add('online');
   setStatus('✅ 已连接 — 就绪');
-  // 显示服务器返回/使用的 sessionId
-  if (data && data.sessionId) {
-    document.getElementById('sessionInput').value = data.sessionId;
+  // 显示服务器返回/使用的 sessionKey
+  if (data && data.sessionKey) {
+    document.getElementById('sessionInput').value = data.sessionKey;
     // 加载该会话的历史聊天记录
-    loadChatHistory(data.sessionId);
+    loadChatHistory(data.sessionKey);
   }
   // 刷新历史列表
   loadHistory();
