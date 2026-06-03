@@ -21,6 +21,8 @@ func generateIdempotencyKey() string {
 	return hex.EncodeToString(b)
 }
 
+
+
 // WSClient WebSocket 客户端
 type WSClient struct {
 	config *Config
@@ -653,9 +655,10 @@ func (c *WSClient) handleEventFrame(frame *ServerFrame) {
 			raw = frame.Payload
 		}
 
-		// 解析 agent 事件: { "sessionKey": "...", "stream": "assistant"|"thinking"|"lifecycle", "data": { "text": "...", "delta": "...", "phase": "..." } }
+		// 解析 agent 事件: { "sessionKey": "...", "runId": "...", "stream": "assistant"|"thinking"|"lifecycle", "data": { "text": "...", "delta": "...", "phase": "..." } }
 		var agentEvent struct {
 			SessionKey string `json:"sessionKey"`
+			RunID      string `json:"runId"`
 			Stream     string `json:"stream"`
 			Data       struct {
 				Text    string `json:"text"`
@@ -680,8 +683,16 @@ func (c *WSClient) handleEventFrame(frame *ServerFrame) {
 			return
 		}
 
-		// sessionKey 过滤：只处理属于当前会话的 agent 事件
-		if c.sessionKey != "" && agentEvent.SessionKey != "" && agentEvent.SessionKey != c.sessionKey {
+		// sessionKey 过滤：
+		// 1. 事件 sessionKey 为空 → 内部 run（记忆插件等），直接丢弃
+		// 2. 事件 sessionKey 与当前会话不匹配 → 不属于本会话，丢弃
+		if agentEvent.SessionKey == "" {
+			if c.debug {
+				fmt.Printf("  [DEBUG] agent 事件 sessionKey 为空，丢弃（可能是记忆插件 runId=%s）\n", agentEvent.RunID)
+			}
+			return
+		}
+		if c.sessionKey != "" && agentEvent.SessionKey != c.sessionKey {
 			if c.debug {
 				fmt.Printf("  [DEBUG] agent 事件 sessionKey 不匹配，忽略: event=%s, local=%s\n", agentEvent.SessionKey, c.sessionKey)
 			}

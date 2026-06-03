@@ -399,6 +399,28 @@ html, body {
   border-radius: 4px;
 }
 
+.message-content-wrapper {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.message-time {
+  font-size: 11px;
+  color: #999;
+  margin-top: 4px;
+  padding: 0 4px;
+}
+
+.message-row.user .message-time {
+  text-align: right;
+}
+
+.message-row.assistant .message-time {
+  text-align: left;
+}
+
 /* 打字指示器 */
 .typing-indicator {
   display: none;
@@ -908,9 +930,9 @@ async function loadChatHistory(sessionId) {
       document.getElementById('messagesContainer').innerHTML = '';
       messages.forEach(function(msg) {
         if (msg.role === 'user') {
-          addUserMessage(msg.content);
+          addUserMessage(msg.content, msg.timestamp);
         } else if (msg.role === 'assistant') {
-          var bubble = addAssistantMessage(msg.content);
+          var bubble = addAssistantMessage(msg.content, msg.timestamp);
           finalizeMessage(bubble);
         } else if (msg.role === 'system') {
           addSystemMessage(msg.content);
@@ -922,25 +944,56 @@ async function loadChatHistory(sessionId) {
   }
 }
 
-function addUserMessage(text) {
+function formatMessageTime(timestamp) {
+  if (!timestamp) return '';
+  try {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    // 如果是今天的消息，只显示时:分
+    if (date.toDateString() === now.toDateString()) {
+      return hours + ':' + minutes;
+    }
+    // 否则显示月-日 时:分
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    return month + '-' + day + ' ' + hours + ':' + minutes;
+  } catch (e) {
+    return '';
+  }
+}
+
+function addUserMessage(text, timestamp) {
   const container = document.getElementById('messagesContainer');
   const row = document.createElement('div');
   row.className = 'message-row user';
+  const timeStr = formatMessageTime(timestamp || new Date().toISOString());
   row.innerHTML = '<div class="message-avatar user-avatar">🧑</div>' +
-    '<div class="message-bubble">' + escapeHtml(text) + '</div>';
+    '<div class="message-content-wrapper">' +
+    '<div class="message-bubble">' + escapeHtml(text) + '</div>' +
+    '<div class="message-time">' + timeStr + '</div>' +
+    '</div>';
   container.appendChild(row);
   scrollToBottom();
 }
 
-function addAssistantMessage(text) {
+function addAssistantMessage(text, timestamp) {
   const container = document.getElementById('messagesContainer');
   const row = document.createElement('div');
   row.className = 'message-row assistant';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'message-content-wrapper';
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble';
   bubble.textContent = text;
+  const timeDiv = document.createElement('div');
+  timeDiv.className = 'message-time';
+  timeDiv.textContent = formatMessageTime(timestamp || new Date().toISOString());
   row.innerHTML = '<div class="message-avatar ai-avatar">🦞</div>';
-  row.appendChild(bubble);
+  wrapper.appendChild(bubble);
+  wrapper.appendChild(timeDiv);
+  row.appendChild(wrapper);
   container.appendChild(row);
   scrollToBottom();
   return bubble;
